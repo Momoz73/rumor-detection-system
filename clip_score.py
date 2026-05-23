@@ -50,6 +50,9 @@ def analyze_text_content(text):
 def get_consistency_score(image_path, text):
     """计算图文一致性得分"""
     try:
+        if isinstance(image_path, Image.Image):
+            return get_fallback_score_by_image(image_path, text)
+        
         img_name = os.path.basename(image_path)
         
         if img_name in PREDIFINED_SCORES:
@@ -65,7 +68,7 @@ def get_consistency_score(image_path, text):
         
     except Exception as e:
         print(f"[评分错误] {image_path}: {str(e)[:200]}")
-        return get_fallback_score(image_path, text)
+        return 50.0
 
 def get_fallback_score(image_path, text):
     """智能模拟评分"""
@@ -114,14 +117,64 @@ def get_fallback_score(image_path, text):
     print(f"[模拟评分] 图片特征:{img_features}, 文本特征:{primary_features}, 得分:{final_score:.2f}")
     return final_score
 
+def get_fallback_score_by_image(img_pil, text):
+    """基于 PIL Image 对象计算得分（用于上传图片）"""
+    features, primary_features = analyze_text_content(text)
+    
+    try:
+        img_array = np.array(img_pil)
+        avg_color = np.mean(img_array, axis=(0, 1))
+        
+        color_score = 50.0
+        if avg_color[0] > avg_color[1] and avg_color[0] > avg_color[2]:
+            color_desc = "red"
+        elif avg_color[1] > avg_color[0] and avg_color[1] > avg_color[2]:
+            color_desc = "green"
+        elif avg_color[2] > avg_color[0] and avg_color[2] > avg_color[1]:
+            color_desc = "blue"
+        else:
+            color_desc = "gray"
+        
+        brightness = np.mean(img_array)
+        if brightness < 80:
+            color_desc = "dark"
+        elif brightness > 180:
+            color_desc = "bright"
+        
+        disaster_indicators = ["火灾", "火", "爆炸", "事故", "车祸", "地震", "洪水", "灾难", "血", "浓烟"]
+        accident_indicators = ["车", "人", "建筑", "倒塌", "坠落", "救援"]
+        
+        text_lower = text.lower()
+        has_disaster = any(d in text_lower for d in disaster_indicators)
+        has_accident = any(a in text_lower for a in accident_indicators)
+        
+        if has_disaster and color_desc in ["red", "dark"]:
+            base = 25.0
+        elif has_accident:
+            base = 40.0
+        else:
+            base = 65.0
+        
+        final_score = base + np.random.uniform(-10, 10)
+        final_score = max(10.0, min(95.0, final_score))
+        
+        print(f"[模拟评分] 上传图片分析: 颜色={color_desc}, 亮度={brightness:.1f}, 得分={final_score:.2f}")
+        return final_score
+        
+    except Exception as e:
+        print(f"[模拟评分错误] {str(e)[:200]}")
+        return 50.0
+
 def highlight_conflict(image_path, text, grid_size=3):
     """找出最不一致的区域，用红框标记"""
     try:
-        if not os.path.exists(image_path):
+        if isinstance(image_path, Image.Image):
+            img_pil = image_path.convert("RGB")
+        elif not os.path.exists(image_path):
             print(f"[错误] 图片文件不存在: {image_path}")
             return None, []
-        
-        img_pil = Image.open(image_path).convert("RGB")
+        else:
+            img_pil = Image.open(image_path).convert("RGB")
         h, w = img_pil.size[::-1]
         step_h = h // grid_size
         step_w = w // grid_size
