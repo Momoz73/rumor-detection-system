@@ -18,6 +18,11 @@ import math
 import json
 from datetime import datetime
 
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+st.write(f"项目根目录: {PROJECT_ROOT}")
+st.write(f"dataset/images 是否存在: {os.path.exists('dataset/images')}")
+if os.path.exists("dataset/images"):
+    st.write("images 中的文件:", os.listdir("dataset/images")[:5])
 # ========== 强制设置项目根目录 ==========
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 os.chdir(PROJECT_ROOT)
