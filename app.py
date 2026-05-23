@@ -2,7 +2,12 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
+# -*- coding: utf-8 -*-
+import streamlit as st
+import streamlit.components.v1 as components
+import pandas as pd
 import os
+import sys
 import numpy as np
 import re
 from PIL import Image
@@ -13,8 +18,13 @@ import math
 import json
 from datetime import datetime
 
+# ========== 强制设置项目根目录 ==========
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+os.chdir(PROJECT_ROOT)
+print(f"[启动] 项目根目录: {PROJECT_ROOT}")
+
 # 加载环境变量（从 .env 文件）
-env_path = os.path.join(os.path.dirname(__file__), '.env')
+env_path = os.path.join(PROJECT_ROOT, '.env')
 if os.path.exists(env_path):
     with open(env_path, 'r', encoding='utf-8') as f:
         for line in f:
@@ -22,6 +32,7 @@ if os.path.exists(env_path):
             if line and not line.startswith('#') and '=' in line:
                 key, value = line.split('=', 1)
                 os.environ[key.strip()] = value.strip()
+
 
 # PDF导出相关导入
 try:
@@ -469,8 +480,9 @@ st.set_page_config(
 
 # 数据载入与处理
 def load_cases():
-    if os.path.exists("dataset/metadata.csv"):
-        data = pd.read_csv("dataset/metadata.csv")
+    metadata_path = os.path.join(PROJECT_ROOT, "dataset", "metadata.csv")
+    if os.path.exists(metadata_path):
+        data = pd.read_csv(metadata_path)
         if "label" in data.columns:
             data["label"] = data["label"].astype(int)
         if "priority" not in data.columns:
@@ -481,7 +493,14 @@ def load_cases():
             data["source"] = "自建案例"
         if "title" not in data.columns:
             data["title"] = ""
-        return data.sort_values(["priority", "image_path"]).reset_index(drop=True)
+        data = data.sort_values(["priority", "image_path"]).reset_index(drop=True)
+        for idx, row in data.iterrows():
+            img_path = row["image_path"]
+            if not os.path.isabs(img_path):
+                full_path = os.path.join(PROJECT_ROOT, img_path)
+                if os.path.exists(full_path):
+                    data.at[idx, "image_path"] = full_path
+        return data
     return None
 
 df = load_cases()
@@ -542,8 +561,9 @@ def on_category_change():
         st.session_state.highlight_img = None
         st.session_state.explanation = ""
     elif new_cat == "自定义上传":
-        if os.path.exists("temp_upload.jpg"):
-            st.session_state.img_path = "temp_upload.jpg"
+        temp_upload_path = os.path.join(PROJECT_ROOT, "temp_upload.jpg")
+        if os.path.exists(temp_upload_path):
+            st.session_state.img_path = temp_upload_path
         else:
             st.session_state.img_path = None
             st.session_state.text = ""
@@ -3533,7 +3553,7 @@ def render_console_empty():
                 st.session_state.explanation = ""
                 st.session_state.is_detecting = False
             if uploaded:
-                temp_file = "temp_upload.jpg"
+                temp_file = os.path.join(PROJECT_ROOT, "temp_upload.jpg")
                 with open(temp_file, "wb") as f:
                     f.write(uploaded.getbuffer())
                 if st.session_state.img_path != temp_file:
