@@ -18,11 +18,6 @@ import math
 import json
 from datetime import datetime
 
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-st.write(f"项目根目录: {PROJECT_ROOT}")
-st.write(f"dataset/images 是否存在: {os.path.exists('dataset/images')}")
-if os.path.exists("dataset/images"):
-    st.write("images 中的文件:", os.listdir("dataset/images")[:5])
 # ========== 强制设置项目根目录 ==========
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 os.chdir(PROJECT_ROOT)
@@ -503,8 +498,7 @@ def load_cases():
             img_path = row["image_path"]
             if not os.path.isabs(img_path):
                 full_path = os.path.join(PROJECT_ROOT, img_path)
-                if os.path.exists(full_path):
-                    data.at[idx, "image_path"] = full_path
+                data.at[idx, "image_path"] = full_path
         return data
     return None
 
@@ -566,9 +560,8 @@ def on_category_change():
         st.session_state.highlight_img = None
         st.session_state.explanation = ""
     elif new_cat == "自定义上传":
-        temp_upload_path = os.path.join(PROJECT_ROOT, "temp_upload.jpg")
-        if os.path.exists(temp_upload_path):
-            st.session_state.img_path = temp_upload_path
+        if st.session_state.uploaded_image_data:
+            st.session_state.img_path = "uploaded_image"
         else:
             st.session_state.img_path = None
             st.session_state.text = ""
@@ -2914,6 +2907,7 @@ st.session_state.setdefault("modelsetting", "Qwen-Max 多模态文本分析")
 st.session_state.setdefault("thresholdsetting", 45)
 st.session_state.setdefault("exportsetting", "PDF")
 st.session_state.setdefault("apikeyinput", "")  # 初始化 API Key 输入
+st.session_state.setdefault("uploaded_image_data", None)  # 存储上传图片的内存数据
 
 # 调试：打印当前 modelsetting 的值
 current_model = st.session_state.get("modelsetting", "NOT SET")
@@ -3558,11 +3552,9 @@ def render_console_empty():
                 st.session_state.explanation = ""
                 st.session_state.is_detecting = False
             if uploaded:
-                temp_file = os.path.join(PROJECT_ROOT, "temp_upload.jpg")
-                with open(temp_file, "wb") as f:
-                    f.write(uploaded.getbuffer())
-                if st.session_state.img_path != temp_file:
-                    st.session_state.img_path = temp_file
+                st.session_state.uploaded_image_data = uploaded.getvalue()
+                if st.session_state.img_path != "uploaded_image":
+                    st.session_state.img_path = "uploaded_image"
                     st.session_state.score = None
                     st.session_state.highlight_img = None
                     st.session_state.explanation = ""
@@ -3771,12 +3763,21 @@ if st.session_state.app_page == "控制台" and st.session_state.img_path and os
             col_img1, col_img2 = st.columns(2)
             with col_img1:
                 st.markdown("<p style='text-align: center; color: color-mix(in srgb, var(--text-color, #31333f) 60%, transparent); font-size: 13px; font-weight: 600; margin-bottom: 12px;'>原始发布图谱</p>", unsafe_allow_html=True)
-                if st.session_state.img_path and os.path.exists(st.session_state.img_path):
-                    with open(st.session_state.img_path, "rb") as f:
-                        data = base64.b64encode(f.read()).decode("utf-8")
-                    ext = os.path.splitext(st.session_state.img_path)[1].replace(".", "")
+                img_path = st.session_state.img_path
+                if img_path == "uploaded_image" and st.session_state.uploaded_image_data:
+                    data = base64.b64encode(st.session_state.uploaded_image_data).decode("utf-8")
+                    ext = "jpeg"
                     img_src = f"data:image/{ext};base64,{data}"
-                    
+                    if st.session_state.is_detecting:
+                        html = f'<div class="image-scanner-wrapper"><div class="image-scanner-line"></div><img src="{img_src}" style="width: 100%; display: block; border-radius: 12px;"/></div>'
+                    else:
+                        html = f'<div class="image-scanner-wrapper"><img src="{img_src}" style="width: 100%; display: block; border-radius: 12px;"/></div>'
+                    st.markdown(html, unsafe_allow_html=True)
+                elif img_path and os.path.exists(img_path):
+                    with open(img_path, "rb") as f:
+                        data = base64.b64encode(f.read()).decode("utf-8")
+                    ext = os.path.splitext(img_path)[1].replace(".", "")
+                    img_src = f"data:image/{ext};base64,{data}"
                     if st.session_state.is_detecting:
                         html = f'<div class="image-scanner-wrapper"><div class="image-scanner-line"></div><img src="{img_src}" style="width: 100%; display: block; border-radius: 12px;"/></div>'
                     else:
@@ -3869,13 +3870,20 @@ if st.session_state.app_page == "控制台" and st.session_state.img_path and os
     if st.session_state.is_detecting:
         model_setting = st.session_state.get("modelsetting", "Qwen-Max 多模态文本分析")
         
+        img_path = st.session_state.img_path
+        if img_path == "uploaded_image" and st.session_state.uploaded_image_data:
+            from io import BytesIO
+            img_for_analysis = Image.open(BytesIO(st.session_state.uploaded_image_data))
+        else:
+            img_for_analysis = img_path
+        
         # 阶段1：特征提取（快速）
         with st.spinner("正在提取多模态交叉对齐特征并计算一致性得分..."):
-            score = get_consistency_score(st.session_state.img_path, st.session_state.text)
+            score = get_consistency_score(img_for_analysis, st.session_state.text)
             st.session_state.score = score
             
             # 获取高亮冲突区域（所有模型都支持）
-            highlight_img, _ = highlight_conflict(st.session_state.img_path, st.session_state.text)
+            highlight_img, _ = highlight_conflict(img_for_analysis, st.session_state.text)
             if highlight_img is not None:
                 if isinstance(highlight_img, np.ndarray):
                     st.session_state.highlight_img = Image.fromarray(highlight_img)
